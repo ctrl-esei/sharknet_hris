@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "26146528084",
+    "project_id": "sharknet-hris",
+    "storage_bucket": "sharknet-hris.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:26146528084:android:048a013ec093ce9bacc6c1",
+        "android_client_info": {
+          "package_name": "com.example.sharknet_hris"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCoLHoAKU_2-z1arHKzt_9pu2AgCSS1D9g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

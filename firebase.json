@@ -1,0 +1,1 @@
+{"flutter":{"platforms":{"android":{"default":{"projectId":"sharknet-hris","appId":"1:26146528084:android:048a013ec093ce9bacc6c1","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"sharknet-hris","configurations":{"android":"1:26146528084:android:048a013ec093ce9bacc6c1","web":"1:26146528084:web:ed7682060f7efb0bacc6c1"}}}}}}
