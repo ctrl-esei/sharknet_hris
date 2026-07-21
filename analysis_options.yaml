@@ -29,8 +29,12 @@ linter:
 analyzer:
   exclude:
     - build/**
+    - ios/build/**
+    - ios/Pods/**
     - ios/.symlinks/**
-    - ios/Flutter/ephemeral/**
+    - macos/build/**
+    - macos/Pods/**
+    - macos/.symlinks/**
     - macos/Flutter/ephemeral/**
-    - .dart_tool/**
-    
+    - android/.gradle/**
+    - android/.kotlin/**

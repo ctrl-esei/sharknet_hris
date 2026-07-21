@@ -1,10 +1,8 @@
-import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
+import 'package:face_detection_tflite/face_detection_tflite.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
-import 'package:image/image.dart' as image_library;
 
 class FaceCapturePlatformScreen extends StatefulWidget {
   const FaceCapturePlatformScreen({
@@ -26,9 +24,9 @@ class _FaceCapturePlatformScreenState
     with WidgetsBindingObserver {
   static const int _requiredSampleCount = 5;
 
-  static const List<String> _sampleInstructions = [
+  static const List<String> _instructions = <String>[
     'Look straight at the camera with both eyes open.',
-    'Turn your head slightly to either side.',
+    'Turn your head slightly to one side.',
     'Turn your head slightly to the opposite side.',
     'Look straight and blink both eyes.',
     'Look straight and smile naturally.',
@@ -37,88 +35,43 @@ class _FaceCapturePlatformScreenState
   CameraController? _cameraController;
   FaceDetector? _faceDetector;
 
-  final List<String> _capturedSamplePaths = [];
+  final List<String> _samplePaths = <String>[];
 
   bool _isInitializing = true;
   bool _isProcessing = false;
-  bool _isSupportedPlatform = true;
 
   String? _errorMessage;
   double? _firstSideYaw;
 
-  int get _currentSampleIndex => _capturedSamplePaths.length;
+  bool get _isSupportedPlatform =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
 
-  bool get _captureComplete =>
-      _capturedSamplePaths.length >= _requiredSampleCount;
+  int get _sampleIndex => _samplePaths.length;
 
-  String get _currentInstruction {
-    if (_captureComplete) {
-      return 'Face samples captured successfully.';
-    }
+  bool get _isComplete =>
+      _samplePaths.length >= _requiredSampleCount;
 
-    return _sampleInstructions[_currentSampleIndex];
-  }
+  String get _instruction => _isComplete
+      ? 'Face samples captured successfully.'
+      : _instructions[_sampleIndex];
 
   @override
   void initState() {
     super.initState();
-
     WidgetsBinding.instance.addObserver(this);
-
-    final bool isAndroid =
-        defaultTargetPlatform == TargetPlatform.android;
-
-    final bool isIos =
-        defaultTargetPlatform == TargetPlatform.iOS;
-
-    _isSupportedPlatform = isAndroid || isIos;
 
     if (!_isSupportedPlatform) {
       _isInitializing = false;
       _errorMessage =
-          'Face detection is available only on Android and iOS.';
+          'Face capture is available only on Android and iOS.';
       return;
     }
 
-    _faceDetector = FaceDetector(
-      options: FaceDetectorOptions(
-        performanceMode: FaceDetectorMode.accurate,
-        enableClassification: true,
-        enableLandmarks: true,
-        enableContours: false,
-        enableTracking: false,
-        minFaceSize: 0.20,
-      ),
-    );
-
-    _initializeCamera();
+    _initialize();
   }
 
-  @override
-  void didChangeAppLifecycleState(
-    AppLifecycleState state,
-  ) {
-    final CameraController? controller = _cameraController;
-
-    if (controller == null ||
-        !controller.value.isInitialized) {
-      return;
-    }
-
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused) {
-      _disposeCamera();
-    } else if (state == AppLifecycleState.resumed &&
-        _isSupportedPlatform) {
-      _initializeCamera();
-    }
-  }
-
-  Future<void> _initializeCamera() async {
-    if (!_isSupportedPlatform) {
-      return;
-    }
-
+  Future<void> _initialize() async {
     if (mounted) {
       setState(() {
         _isInitializing = true;
@@ -127,6 +80,12 @@ class _FaceCapturePlatformScreenState
     }
 
     try {
+      _faceDetector ??= await FaceDetector.create(
+        model: FaceDetectionModel.frontCamera,
+        minScore: 0.80,
+        minFaceSize: 0.20,
+      );
+
       final List<CameraDescription> cameras =
           await availableCameras();
 
@@ -139,30 +98,32 @@ class _FaceCapturePlatformScreenState
       CameraDescription selectedCamera = cameras.first;
 
       for (final CameraDescription camera in cameras) {
-        if (camera.lensDirection ==
-            CameraLensDirection.front) {
+        if (camera.lensDirection == CameraLensDirection.front) {
           selectedCamera = camera;
           break;
         }
       }
 
-      await _cameraController?.dispose();
+      final CameraController controller =
+          await _createCameraController(selectedCamera);
 
-      final CameraController controller = CameraController(
-        selectedCamera,
-        ResolutionPreset.high,
-        enableAudio: false,
-      );
+      final CameraController? previousController =
+          _cameraController;
 
       _cameraController = controller;
-
-      await controller.initialize();
+      await previousController?.dispose();
 
       try {
         await controller.setFlashMode(FlashMode.off);
-      } catch (_) {
-        // Some front cameras do not support flash settings.
-      }
+      } catch (_) {}
+
+      try {
+        await controller.setFocusMode(FocusMode.auto);
+      } catch (_) {}
+
+      try {
+        await controller.setExposureMode(ExposureMode.auto);
+      } catch (_) {}
 
       if (!mounted) {
         await controller.dispose();
@@ -171,7 +132,6 @@ class _FaceCapturePlatformScreenState
 
       setState(() {
         _isInitializing = false;
-        _errorMessage = null;
       });
     } on CameraException catch (error) {
       if (!mounted) {
@@ -194,11 +154,55 @@ class _FaceCapturePlatformScreenState
     }
   }
 
+  Future<CameraController> _createCameraController(
+    CameraDescription camera,
+  ) async {
+    final List<ResolutionPreset> presets = <ResolutionPreset>[
+      ResolutionPreset.veryHigh,
+      ResolutionPreset.high,
+      ResolutionPreset.medium,
+    ];
+
+    Object? lastError;
+
+    for (final ResolutionPreset preset in presets) {
+      final CameraController controller = CameraController(
+        camera,
+        preset,
+        enableAudio: false,
+      );
+
+      try {
+        await controller.initialize();
+        return controller;
+      } catch (error) {
+        lastError = error;
+        await controller.dispose();
+      }
+    }
+
+    throw StateError(
+      'Unable to initialize the front camera: $lastError',
+    );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_isSupportedPlatform) {
+      return;
+    }
+
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      _disposeCamera();
+    } else if (state == AppLifecycleState.resumed) {
+      _initialize();
+    }
+  }
+
   Future<void> _disposeCamera() async {
     final CameraController? controller = _cameraController;
-
     _cameraController = null;
-
     await controller?.dispose();
   }
 
@@ -207,7 +211,7 @@ class _FaceCapturePlatformScreenState
     final FaceDetector? detector = _faceDetector;
 
     if (_isProcessing ||
-        _captureComplete ||
+        _isComplete ||
         controller == null ||
         detector == null ||
         !controller.value.isInitialized) {
@@ -219,60 +223,43 @@ class _FaceCapturePlatformScreenState
     });
 
     try {
-      final XFile capturedImage =
-          await controller.takePicture();
+      final XFile capturedImage = await controller.takePicture();
+      final Uint8List bytes = await capturedImage.readAsBytes();
 
-      final InputImage inputImage =
-          InputImage.fromFilePath(capturedImage.path);
-
-      final List<Face> detectedFaces =
-          await detector.processImage(inputImage);
-
-      final Uint8List imageBytes =
-          await capturedImage.readAsBytes();
-
-      final image_library.Image? decodedImage =
-          image_library.decodeImage(imageBytes);
-
-      if (decodedImage == null) {
-        _showError(
-          'The captured image could not be processed. '
-          'Please try again.',
-        );
-        return;
-      }
-
-      final _FaceValidationResult validation =
-          _validateFace(
-        faces: detectedFaces,
-        imageWidth: decodedImage.width,
-        imageHeight: decodedImage.height,
-        sampleIndex: _currentSampleIndex,
+      final List<Face> faces = await detector.detectFacesFromBytes(
+        bytes,
+        mode: FaceDetectionMode.full,
       );
 
-      if (!validation.isValid) {
-        _showError(validation.message);
+      final _ValidationResult validation = _validateFace(
+        faces: faces,
+        sampleIndex: _sampleIndex,
+      );
+
+      if (!validation.valid) {
+        _showMessage(validation.message, error: true);
         return;
       }
 
-      final Face validFace = detectedFaces.first;
+      final Face face = faces.first;
 
-      if (_currentSampleIndex == 1) {
-        _firstSideYaw = validFace.headEulerAngleY;
+      if (_sampleIndex == 1) {
+        _firstSideYaw = face.headEulerAngleY;
       }
 
       setState(() {
-        _capturedSamplePaths.add(capturedImage.path);
+        _samplePaths.add(capturedImage.path);
       });
 
-      _showSuccess(
-        'Sample ${_capturedSamplePaths.length} of '
+      _showMessage(
+        'Sample ${_samplePaths.length} of '
         '$_requiredSampleCount accepted.',
+        error: false,
       );
 
-      if (_captureComplete) {
+      if (_isComplete) {
         await Future<void>.delayed(
-          const Duration(milliseconds: 700),
+          const Duration(milliseconds: 650),
         );
 
         if (!mounted) {
@@ -280,16 +267,15 @@ class _FaceCapturePlatformScreenState
         }
 
         Navigator.of(context).pop<List<String>>(
-          List<String>.unmodifiable(
-            _capturedSamplePaths,
-          ),
+          List<String>.unmodifiable(_samplePaths),
         );
       }
     } on CameraException catch (error) {
-      _showError(_cameraErrorMessage(error));
+      _showMessage(_cameraErrorMessage(error), error: true);
     } catch (error) {
-      _showError(
-        'Unable to process the face sample: $error',
+      _showMessage(
+        'Unable to capture the face sample: $error',
+        error: true,
       );
     } finally {
       if (mounted) {
@@ -300,38 +286,33 @@ class _FaceCapturePlatformScreenState
     }
   }
 
-  _FaceValidationResult _validateFace({
+  _ValidationResult _validateFace({
     required List<Face> faces,
-    required int imageWidth,
-    required int imageHeight,
     required int sampleIndex,
   }) {
     if (faces.isEmpty) {
-      return const _FaceValidationResult.invalid(
-        'No face was detected. Move closer and try again.',
+      return const _ValidationResult.invalid(
+        'No face was detected. Move closer and use better lighting.',
       );
     }
 
     if (faces.length > 1) {
-      return const _FaceValidationResult.invalid(
-        'More than one face was detected. '
-        'Only the selected employee may appear on camera.',
+      return const _ValidationResult.invalid(
+        'More than one face was detected.',
       );
     }
 
     final Face face = faces.first;
 
-    final double shortImageSide = math.min(
-      imageWidth.toDouble(),
-      imageHeight.toDouble(),
-    );
+    if (face.score < 0.80) {
+      return const _ValidationResult.invalid(
+        'The face is not clear enough. Clean the lens and use better lighting.',
+      );
+    }
 
-    final double faceWidthRatio =
-        face.boundingBox.width / shortImageSide;
-
-    if (faceWidthRatio < 0.23) {
-      return const _FaceValidationResult.invalid(
-        'Move closer to the camera. Your face is too small.',
+    if (face.widthFraction < 0.25) {
+      return const _ValidationResult.invalid(
+        'Move closer to the camera.',
       );
     }
 
@@ -340,13 +321,13 @@ class _FaceCapturePlatformScreenState
     final double roll = face.headEulerAngleZ ?? 0;
 
     if (pitch.abs() > 25) {
-      return const _FaceValidationResult.invalid(
-        'Keep your face level. Do not look too far up or down.',
+      return const _ValidationResult.invalid(
+        'Keep your face level.',
       );
     }
 
     if (roll.abs() > 20) {
-      return const _FaceValidationResult.invalid(
+      return const _ValidationResult.invalid(
         'Keep your head upright.',
       );
     }
@@ -354,122 +335,100 @@ class _FaceCapturePlatformScreenState
     switch (sampleIndex) {
       case 0:
         if (yaw.abs() > 12) {
-          return const _FaceValidationResult.invalid(
-            'For the first sample, look directly at the camera.',
+          return const _ValidationResult.invalid(
+            'Look directly at the camera.',
           );
         }
 
-        if (!_eyesAreOpen(face)) {
-          return const _FaceValidationResult.invalid(
-            'Keep both eyes open for the first sample.',
+        if (!_eyesOpen(face)) {
+          return const _ValidationResult.invalid(
+            'Keep both eyes open.',
           );
         }
-
         break;
 
       case 1:
         if (yaw.abs() < 8 || yaw.abs() > 32) {
-          return const _FaceValidationResult.invalid(
-            'Turn your head slightly to one side. '
-            'Do not turn too far.',
+          return const _ValidationResult.invalid(
+            'Turn your head slightly to one side.',
           );
         }
-
         break;
 
       case 2:
         if (yaw.abs() < 8 || yaw.abs() > 32) {
-          return const _FaceValidationResult.invalid(
+          return const _ValidationResult.invalid(
             'Turn your head slightly to the opposite side.',
           );
         }
 
-        final double? firstYaw = _firstSideYaw;
-
-        if (firstYaw != null &&
-            yaw.sign == firstYaw.sign) {
-          return const _FaceValidationResult.invalid(
+        final double? firstSideYaw = _firstSideYaw;
+        if (firstSideYaw != null && yaw.sign == firstSideYaw.sign) {
+          return const _ValidationResult.invalid(
             'Turn toward the opposite side from the previous sample.',
           );
         }
-
         break;
 
       case 3:
         if (yaw.abs() > 15) {
-          return const _FaceValidationResult.invalid(
-            'Look straight at the camera before blinking.',
+          return const _ValidationResult.invalid(
+            'Look straight before blinking.',
           );
         }
 
-        if (!_eyesAreClosed(face)) {
-          return const _FaceValidationResult.invalid(
-            'Blink both eyes while capturing this sample.',
+        if (!_eyesClosed(face)) {
+          return const _ValidationResult.invalid(
+            'Close both eyes briefly while capturing.',
           );
         }
-
         break;
 
       case 4:
         if (yaw.abs() > 15) {
-          return const _FaceValidationResult.invalid(
-            'Look straight at the camera while smiling.',
+          return const _ValidationResult.invalid(
+            'Look straight while smiling.',
           );
         }
 
-        final double? smileProbability =
-            face.smilingProbability;
-
-        if (smileProbability == null ||
-            smileProbability < 0.55) {
-          return const _FaceValidationResult.invalid(
-            'Smile naturally and capture the sample again.',
+        if ((face.smilingProbability ?? 0) < 0.45) {
+          return const _ValidationResult.invalid(
+            'Smile naturally and try again.',
           );
         }
 
-        if (!_eyesAreOpen(face)) {
-          return const _FaceValidationResult.invalid(
+        if (!_eyesOpen(face)) {
+          return const _ValidationResult.invalid(
             'Keep both eyes open while smiling.',
           );
         }
-
         break;
     }
 
-    return const _FaceValidationResult.valid();
+    return const _ValidationResult.valid();
   }
 
-  bool _eyesAreOpen(Face face) {
-    final double? leftEye =
-        face.leftEyeOpenProbability;
+  bool _eyesOpen(Face face) {
+    final double? left = face.leftEyeOpenProbability;
+    final double? right = face.rightEyeOpenProbability;
 
-    final double? rightEye =
-        face.rightEyeOpenProbability;
-
-    if (leftEye == null || rightEye == null) {
-      return false;
-    }
-
-    return leftEye >= 0.45 &&
-        rightEye >= 0.45;
+    return left != null &&
+        right != null &&
+        left >= 0.45 &&
+        right >= 0.45;
   }
 
-  bool _eyesAreClosed(Face face) {
-    final double? leftEye =
-        face.leftEyeOpenProbability;
+  bool _eyesClosed(Face face) {
+    final double? left = face.leftEyeOpenProbability;
+    final double? right = face.rightEyeOpenProbability;
 
-    final double? rightEye =
-        face.rightEyeOpenProbability;
-
-    if (leftEye == null || rightEye == null) {
-      return false;
-    }
-
-    return leftEye <= 0.40 &&
-        rightEye <= 0.40;
+    return left != null &&
+        right != null &&
+        left <= 0.40 &&
+        right <= 0.40;
   }
 
-  void _showError(String message) {
+  void _showMessage(String message, {required bool error}) {
     if (!mounted) {
       return;
     }
@@ -479,23 +438,10 @@ class _FaceCapturePlatformScreenState
       ..showSnackBar(
         SnackBar(
           content: Text(message),
-          backgroundColor: const Color(0xFFC62828),
-        ),
-      );
-  }
-
-  void _showSuccess(String message) {
-    if (!mounted) {
-      return;
-    }
-
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: const Color(0xFF2E7D32),
-          duration: const Duration(milliseconds: 900),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: error
+              ? const Color(0xFFC62828)
+              : const Color(0xFF2E7D32),
         ),
       );
   }
@@ -503,41 +449,26 @@ class _FaceCapturePlatformScreenState
   String _cameraErrorMessage(CameraException error) {
     switch (error.code) {
       case 'CameraAccessDenied':
-        return 'Camera permission was denied. '
-            'Allow camera access in the device settings.';
-
+        return 'Camera permission was denied. Allow camera access in Settings.';
       case 'CameraAccessDeniedWithoutPrompt':
-        return 'Camera access is disabled. '
-            'Enable it from the device settings.';
-
+        return 'Camera access is disabled. Enable it in Settings.';
       case 'CameraAccessRestricted':
         return 'Camera access is restricted on this device.';
-
-      case 'AudioAccessDenied':
-        return 'Microphone permission was denied.';
-
       default:
-        return error.description ??
-            'Unable to open the camera.';
+        return error.description ?? 'Unable to open the camera.';
     }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-
     _cameraController?.dispose();
-    _faceDetector?.close();
-
+    _faceDetector?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_isSupportedPlatform) {
-      return _buildUnsupportedScreen();
-    }
-
     return Scaffold(
       backgroundColor: const Color(0xFF101828),
       appBar: AppBar(
@@ -545,68 +476,40 @@ class _FaceCapturePlatformScreenState
         backgroundColor: const Color(0xFF1565C0),
         foregroundColor: Colors.white,
       ),
-      body: SafeArea(
-        child: _buildBody(),
-      ),
-    );
-  }
-
-  Widget _buildUnsupportedScreen() {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Capture Face Samples'),
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            _errorMessage ??
-                'This platform is not supported.',
-            textAlign: TextAlign.center,
-          ),
-        ),
-      ),
+      body: SafeArea(child: _buildBody()),
     );
   }
 
   Widget _buildBody() {
     if (_isInitializing) {
       return const Center(
-        child: CircularProgressIndicator(
-          color: Colors.white,
-        ),
+        child: CircularProgressIndicator(color: Colors.white),
       );
     }
 
     if (_errorMessage != null) {
       return Center(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Container(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(22),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(18),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: [
+              children: <Widget>[
                 const Icon(
                   Icons.camera_alt_outlined,
-                  size: 60,
+                  size: 58,
                   color: Color(0xFFC62828),
                 ),
-                const SizedBox(height: 15),
-                Text(
-                  _errorMessage!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    height: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 14),
+                Text(_errorMessage!, textAlign: TextAlign.center),
+                const SizedBox(height: 16),
                 FilledButton.icon(
-                  onPressed: _initializeCamera,
+                  onPressed: _initialize,
                   icon: const Icon(Icons.refresh),
                   label: const Text('Try Again'),
                 ),
@@ -619,118 +522,96 @@ class _FaceCapturePlatformScreenState
 
     final CameraController? controller = _cameraController;
 
-    if (controller == null ||
-        !controller.value.isInitialized) {
+    if (controller == null || !controller.value.isInitialized) {
       return const Center(
         child: Text(
           'Camera is unavailable.',
-          style: TextStyle(
-            color: Colors.white,
-          ),
+          style: TextStyle(color: Colors.white),
         ),
       );
     }
 
     return Column(
-      children: [
+      children: <Widget>[
         Expanded(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Center(
-                child: AspectRatio(
-                  aspectRatio: controller.value.aspectRatio,
-                  child: CameraPreview(controller),
-                ),
-              ),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(
-                    alpha: 0.15,
+          child: LayoutBuilder(
+            builder: (
+              BuildContext context,
+              BoxConstraints constraints,
+            ) {
+              final double guideWidth =
+                  (constraints.maxWidth * 0.82).clamp(240.0, 380.0);
+
+              return Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  _buildCoverPreview(controller),
+                  Container(
+                    color: Colors.black.withValues(alpha: 0.12),
                   ),
-                ),
-              ),
-              Center(
-                child: Container(
-                  width: 240,
-                  height: 310,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(150),
-                    border: Border.all(
-                      color: _isProcessing
-                          ? const Color(0xFFFFB74D)
-                          : Colors.white,
-                      width: 4,
+                  Center(
+                    child: Container(
+                      width: guideWidth,
+                      height: guideWidth * 1.25,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(guideWidth),
+                        border: Border.all(
+                          color: _isProcessing
+                              ? const Color(0xFFFFB74D)
+                              : Colors.white,
+                          width: 4,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-              Positioned(
-                top: 18,
-                left: 18,
-                right: 18,
-                child: _buildEmployeeBanner(),
-              ),
-            ],
+                  Positioned(
+                    top: 16,
+                    left: 16,
+                    right: 16,
+                    child: _employeeBanner(),
+                  ),
+                ],
+              );
+            },
           ),
         ),
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(
-            22,
-            18,
-            22,
-            22,
-          ),
+          padding: const EdgeInsets.fromLTRB(22, 17, 22, 22),
           color: const Color(0xFF101828),
           child: Column(
-            children: [
-              _buildProgressIndicator(),
-              const SizedBox(height: 14),
+            children: <Widget>[
+              _progress(),
+              const SizedBox(height: 13),
               Text(
-                _currentInstruction,
+                _instruction,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 16,
+                  fontSize: 15,
                   fontWeight: FontWeight.w700,
                   height: 1.4,
                 ),
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 16),
               SizedBox(
                 width: 76,
                 height: 76,
                 child: FilledButton(
-                  onPressed:
-                      _isProcessing ? null : _captureSample,
+                  onPressed: _isProcessing ? null : _captureSample,
                   style: FilledButton.styleFrom(
                     shape: const CircleBorder(),
                     backgroundColor: Colors.white,
-                    foregroundColor:
-                        const Color(0xFF1565C0),
+                    foregroundColor: const Color(0xFF1565C0),
                     padding: EdgeInsets.zero,
                   ),
                   child: _isProcessing
                       ? const SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 3,
-                          ),
+                          width: 27,
+                          height: 27,
+                          child: CircularProgressIndicator(strokeWidth: 3),
                         )
-                      : const Icon(
-                          Icons.camera_alt,
-                          size: 34,
-                        ),
-                ),
-              ),
-              const SizedBox(height: 9),
-              const Text(
-                'Tap the camera button when ready',
-                style: TextStyle(
-                  color: Color(0xFF98A2B3),
-                  fontSize: 12,
+                      : const Icon(Icons.camera_alt, size: 34),
                 ),
               ),
             ],
@@ -740,28 +621,41 @@ class _FaceCapturePlatformScreenState
     );
   }
 
-  Widget _buildEmployeeBanner() {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 15,
-        vertical: 11,
+  Widget _buildCoverPreview(CameraController controller) {
+    final Size? previewSize = controller.value.previewSize;
+
+    if (previewSize == null) {
+      return CameraPreview(controller);
+    }
+
+    return ClipRect(
+      child: FittedBox(
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        child: SizedBox(
+          width: previewSize.height,
+          height: previewSize.width,
+          child: CameraPreview(controller),
+        ),
       ),
+    );
+  }
+
+  Widget _employeeBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.55),
+        color: Colors.black.withValues(alpha: 0.58),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
-        children: [
-          const Icon(
-            Icons.face_outlined,
-            color: Colors.white,
-          ),
+        children: <Widget>[
+          const Icon(Icons.face_outlined, color: Colors.white),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
-              children: [
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
                 Text(
                   widget.fullName,
                   maxLines: 1,
@@ -786,25 +680,19 @@ class _FaceCapturePlatformScreenState
     );
   }
 
-  Widget _buildProgressIndicator() {
+  Widget _progress() {
     return Row(
-      children: List.generate(
+      children: List<Widget>.generate(
         _requiredSampleCount,
-        (index) {
-          final bool completed =
-              index < _capturedSamplePaths.length;
-
-          final bool current =
-              index == _capturedSamplePaths.length;
+        (int index) {
+          final bool completed = index < _samplePaths.length;
+          final bool current = index == _samplePaths.length;
 
           return Expanded(
             child: Container(
               height: 7,
               margin: EdgeInsets.only(
-                right:
-                    index == _requiredSampleCount - 1
-                        ? 0
-                        : 7,
+                right: index == _requiredSampleCount - 1 ? 0 : 7,
               ),
               decoration: BoxDecoration(
                 color: completed
@@ -822,15 +710,13 @@ class _FaceCapturePlatformScreenState
   }
 }
 
-class _FaceValidationResult {
-  const _FaceValidationResult.valid()
-      : isValid = true,
+class _ValidationResult {
+  const _ValidationResult.valid()
+      : valid = true,
         message = '';
 
-  const _FaceValidationResult.invalid(
-    this.message,
-  ) : isValid = false;
+  const _ValidationResult.invalid(this.message) : valid = false;
 
-  final bool isValid;
+  final bool valid;
   final String message;
 }

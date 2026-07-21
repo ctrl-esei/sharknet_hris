@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../../services/face_recognition_service.dart';
 import 'face_capture_screen.dart';
 
 class RegisterFaceScreen extends StatefulWidget {
@@ -18,207 +19,267 @@ class RegisterFaceScreen extends StatefulWidget {
       _RegisterFaceScreenState();
 }
 
-class _RegisterFaceScreenState
-    extends State<RegisterFaceScreen> {
+class _RegisterFaceScreenState extends State<RegisterFaceScreen> {
   bool _consentAccepted = false;
+  bool _isProcessing = false;
 
-  List<String> _capturedSamplePaths = [];
+  Future<void> _startEnrollment() async {
+    if (!_consentAccepted) {
+      _showMessage(
+        'Accept the biometric consent before registering the face.',
+        error: true,
+      );
+      return;
+    }
 
-  bool get _samplesReady =>
-      _capturedSamplePaths.length == 5;
-
-  Future<void> _startRegistration() async {
-    final List<String>? capturedSamples =
+    final List<String>? samplePaths =
         await Navigator.of(context).push<List<String>>(
-      MaterialPageRoute(
-        builder: (_) => FaceCaptureScreen(
+      MaterialPageRoute<List<String>>(
+        builder: (_) => FaceCapturePlatformScreen(
           employeeId: widget.employeeId,
           fullName: widget.fullName,
         ),
       ),
     );
 
-    if (!mounted ||
-        capturedSamples == null ||
-        capturedSamples.isEmpty) {
+    if (!mounted || samplePaths == null || samplePaths.isEmpty) {
       return;
     }
 
     setState(() {
-      _capturedSamplePaths = capturedSamples;
+      _isProcessing = true;
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Five valid face samples were captured.',
+    try {
+      await FaceRecognitionService.enrollEmployee(
+        employeeId: widget.employeeId,
+        samplePaths: samplePaths,
+        consentAccepted: _consentAccepted,
+      );
+
+      _showMessage(
+        'Face registered successfully. The employee is now active for face attendance.',
+        error: false,
+      );
+    } catch (error) {
+      _showMessage(
+        'Face registration failed: $error',
+        error: true,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
+      }
+    }
+  }
+
+  void _showMessage(String message, {required bool error}) {
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: error
+              ? const Color(0xFFD92D20)
+              : const Color(0xFF039855),
         ),
-        backgroundColor: Color(0xFF2E7D32),
-      ),
-    );
+      );
   }
 
   @override
   Widget build(BuildContext context) {
-    final employeeReference = FirebaseFirestore.instance
-        .collection('employee')
-        .doc(widget.employeeId);
+    final DocumentReference<Map<String, dynamic>> employeeReference =
+        FirebaseFirestore.instance
+            .collection('employee')
+            .doc(widget.employeeId);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FC),
       appBar: AppBar(
-        title: const Text('Register Employee Face'),
+        title: const Text('Register Face'),
         backgroundColor: const Color(0xFF1565C0),
         foregroundColor: Colors.white,
       ),
-      body: StreamBuilder<
-          DocumentSnapshot<Map<String, dynamic>>>(
+      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: employeeReference.snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(
-              child: Text(
-                'Unable to load employee: ${snapshot.error}',
-              ),
-            );
-          }
-
-          if (!snapshot.hasData) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
-
-          if (!snapshot.data!.exists) {
-            return const Center(
-              child: Text(
-                'Employee record was not found.',
-              ),
-            );
-          }
-
+        builder: (
+          BuildContext context,
+          AsyncSnapshot<DocumentSnapshot<Map<String, dynamic>>> snapshot,
+        ) {
           final Map<String, dynamic> data =
-              snapshot.data!.data() ?? {};
+              snapshot.data?.data() ?? <String, dynamic>{};
 
-          final bool faceRegistered =
-              data['faceRegistered'] == true;
+          final bool faceRegistered = data['faceRegistered'] == true;
+          final bool faceActive =
+              faceRegistered && data['faceActive'] != false;
 
-          final String biometricStatus =
-              data['biometricStatus']?.toString() ??
-                  'not_enrolled';
+          final List<dynamic> embedding = data['faceEmbedding'] is List
+              ? data['faceEmbedding'] as List<dynamic>
+              : <dynamic>[];
+
+          final String modelVersion =
+              data['faceModelVersion']?.toString().trim() ?? '';
 
           return ListView(
             padding: const EdgeInsets.all(20),
-            children: [
-              _buildEmployeeCard(
-                faceRegistered: faceRegistered,
-                biometricStatus: biometricStatus,
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Registration Requirements',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
+            children: <Widget>[
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFE4E7EC)),
                 ),
-              ),
-              const SizedBox(height: 12),
-              const _RequirementItem(
-                icon: Icons.light_mode_outlined,
-                text: 'Use a bright, evenly lit area.',
-              ),
-              const _RequirementItem(
-                icon: Icons.person_outline,
-                text:
-                    'Only the selected employee may appear.',
-              ),
-              const _RequirementItem(
-                icon: Icons.remove_red_eye_outlined,
-                text:
-                    'Remove masks, sunglasses, and coverings.',
-              ),
-              const _RequirementItem(
-                icon: Icons.threesixty,
-                text:
-                    'Follow all head movement instructions.',
-              ),
-              const _RequirementItem(
-                icon: Icons.sentiment_satisfied_alt,
-                text:
-                    'Complete the blink and smile checks.',
-              ),
-              const SizedBox(height: 16),
-              CheckboxListTile(
-                value: _consentAccepted,
-                contentPadding: EdgeInsets.zero,
-                controlAffinity:
-                    ListTileControlAffinity.leading,
-                title: const Text(
-                  'The employee gives permission to '
-                  'register and use their face template '
-                  'for attendance verification.',
-                ),
-                onChanged: (value) {
-                  setState(() {
-                    _consentAccepted = value == true;
-                  });
-                },
-              ),
-              if (_samplesReady) ...[
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.all(15),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8F5E9),
-                    borderRadius: BorderRadius.circular(13),
-                    border: Border.all(
-                      color: const Color(0xFFA5D6A7),
-                    ),
-                  ),
-                  child: const Row(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.check_circle,
-                        color: Color(0xFF2E7D32),
-                      ),
-                      SizedBox(width: 11),
-                      Expanded(
-                        child: Text(
-                          'Five valid samples are ready. '
-                          'The employee is not yet marked as '
-                          'registered until the face embedding '
-                          'is generated and saved.',
-                          style: TextStyle(
-                            color: Color(0xFF1B5E20),
-                            height: 1.4,
-                          ),
+                child: Row(
+                  children: <Widget>[
+                    CircleAvatar(
+                      radius: 29,
+                      backgroundColor: const Color(0xFFEAF2FF),
+                      child: Text(
+                        _initials(widget.fullName),
+                        style: const TextStyle(
+                          color: Color(0xFF1565C0),
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
-                    ],
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            widget.fullName,
+                            style: const TextStyle(
+                              color: Color(0xFF101828),
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            widget.employeeId.toUpperCase(),
+                            style: const TextStyle(
+                              color: Color(0xFF667085),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: faceActive
+                      ? const Color(0xFFECFDF3)
+                      : const Color(0xFFFFFAEB),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: faceActive
+                        ? const Color(0xFFA6F4C5)
+                        : const Color(0xFFFEC84B),
                   ),
                 ),
-              ],
-              const SizedBox(height: 20),
+                child: Column(
+                  children: <Widget>[
+                    _statusRow(
+                      label: 'Biometric Status',
+                      value: data['biometricStatus']?.toString() ??
+                          'not_enrolled',
+                    ),
+                    _statusRow(
+                      label: 'Face Registered',
+                      value: faceRegistered ? 'Yes' : 'No',
+                    ),
+                    _statusRow(
+                      label: 'Face Active',
+                      value: faceActive ? 'Yes' : 'No',
+                    ),
+                    _statusRow(
+                      label: 'Embedding Values',
+                      value: embedding.length.toString(),
+                    ),
+                    _statusRow(
+                      label: 'Model Version',
+                      value: modelVersion.isEmpty ? 'Not set' : modelVersion,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              Container(
+                padding: const EdgeInsets.all(17),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE4E7EC)),
+                ),
+                child: CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _consentAccepted,
+                  onChanged: _isProcessing
+                      ? null
+                      : (bool? value) {
+                          setState(() {
+                            _consentAccepted = value ?? false;
+                          });
+                        },
+                  title: const Text(
+                    'Biometric consent',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  subtitle: const Text(
+                    'The employee agrees that a numerical face template '
+                    'will be processed for attendance verification.',
+                  ),
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+              ),
+              const SizedBox(height: 18),
               FilledButton.icon(
-                onPressed: _consentAccepted
-                    ? _startRegistration
-                    : null,
+                onPressed: _isProcessing ? null : _startEnrollment,
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFF1565C0),
                   foregroundColor: Colors.white,
-                  minimumSize: const Size.fromHeight(52),
+                  minimumSize: const Size.fromHeight(54),
                 ),
-                icon: const Icon(
-                  Icons.camera_alt_outlined,
-                ),
+                icon: _isProcessing
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.face_retouching_natural),
                 label: Text(
-                  _samplesReady
-                      ? 'Recapture Face Samples'
+                  _isProcessing
+                      ? 'Generating face template...'
                       : faceRegistered
                           ? 'Update Registered Face'
-                          : 'Start Face Registration',
+                          : 'Register Face',
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Successful registration stores a 192-value face embedding. '
+                'Raw captured photos are not written to Firestore.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0xFF667085),
+                  fontSize: 12,
+                  height: 1.4,
                 ),
               ),
             ],
@@ -228,116 +289,47 @@ class _RegisterFaceScreenState
     );
   }
 
-  Widget _buildEmployeeCard({
-    required bool faceRegistered,
-    required String biometricStatus,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFFE5E7EB),
-        ),
-      ),
-      child: Column(
-        children: [
-          const CircleAvatar(
-            radius: 40,
-            backgroundColor: Color(0xFFE3F2FD),
-            child: Icon(
-              Icons.face_outlined,
-              size: 42,
-              color: Color(0xFF1565C0),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            widget.fullName,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 21,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            widget.employeeId.toUpperCase(),
-            style: const TextStyle(
-              color: Color(0xFF6B7280),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 7,
-            ),
-            decoration: BoxDecoration(
-              color: faceRegistered
-                  ? const Color(0xFFE8F5E9)
-                  : const Color(0xFFFFF3E0),
-              borderRadius: BorderRadius.circular(20),
-            ),
+  Widget _statusRow({required String label, required String value}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: <Widget>[
+          Expanded(
             child: Text(
-              faceRegistered
-                  ? 'Face Registered – '
-                      '${_formatLabel(biometricStatus)}'
-                  : 'Face Not Enrolled',
-              style: TextStyle(
-                color: faceRegistered
-                    ? const Color(0xFF2E7D32)
-                    : const Color(0xFFEF6C00),
-                fontWeight: FontWeight.w700,
+              label,
+              style: const TextStyle(
+                color: Color(0xFF475467),
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Color(0xFF101828),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  String _formatLabel(String value) {
-    return value
-        .replaceAll('_', ' ')
-        .split(' ')
-        .where((word) => word.isNotEmpty)
-        .map(
-          (word) =>
-              '${word[0].toUpperCase()}'
-              '${word.substring(1).toLowerCase()}',
-        )
-        .join(' ');
-  }
-}
+  String _initials(String fullName) {
+    final List<String> parts = fullName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((String part) => part.isNotEmpty)
+        .toList();
 
-class _RequirementItem extends StatelessWidget {
-  const _RequirementItem({
-    required this.icon,
-    required this.text,
-  });
+    if (parts.isEmpty) {
+      return '?';
+    }
 
-  final IconData icon;
-  final String text;
+    if (parts.length == 1) {
+      return parts.first[0].toUpperCase();
+    }
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 11),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            icon,
-            color: const Color(0xFF1565C0),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(text),
-          ),
-        ],
-      ),
-    );
+    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
   }
 }

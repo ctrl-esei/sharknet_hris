@@ -4,22 +4,16 @@ import 'package:flutter/material.dart';
 
 import '../../services/thirteenth_month_service.dart';
 
-class ThirteenthMonthScreen
-    extends StatefulWidget {
-  const ThirteenthMonthScreen({
-    required this.employeeId,
-    super.key,
-  });
+class ThirteenthMonthScreen extends StatefulWidget {
+  const ThirteenthMonthScreen({required this.employeeId, super.key});
 
   final String employeeId;
 
   @override
-  State<ThirteenthMonthScreen> createState() =>
-      _ThirteenthMonthScreenState();
+  State<ThirteenthMonthScreen> createState() => _ThirteenthMonthScreenState();
 }
 
-class _ThirteenthMonthScreenState
-    extends State<ThirteenthMonthScreen> {
+class _ThirteenthMonthScreenState extends State<ThirteenthMonthScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
 
@@ -45,8 +39,7 @@ class _ThirteenthMonthScreenState
     });
 
     try {
-      final List<dynamic> results =
-          await Future.wait<dynamic>([
+      final List<dynamic> results = await Future.wait<dynamic>([
         FirebaseFirestore.instance
             .collection('employee')
             .doc(widget.employeeId)
@@ -57,19 +50,14 @@ class _ThirteenthMonthScreenState
         ),
       ]);
 
-      final DocumentSnapshot<Map<String, dynamic>>
-          employeeDocument = results[0]
-              as DocumentSnapshot<
-                  Map<String, dynamic>>;
+      final DocumentSnapshot<Map<String, dynamic>> employeeDocument =
+          results[0] as DocumentSnapshot<Map<String, dynamic>>;
 
       final Map<String, dynamic> employeeData =
-          employeeDocument.data() ??
-              <String, dynamic>{};
+          employeeDocument.data() ?? <String, dynamic>{};
 
       if (!employeeDocument.exists) {
-        throw StateError(
-          'Employee record was not found.',
-        );
+        throw StateError('Employee record was not found.');
       }
 
       if (!mounted) {
@@ -78,19 +66,13 @@ class _ThirteenthMonthScreenState
 
       setState(() {
         _employeeName =
-            employeeData['fullName']
-                    ?.toString() ??
-                widget.employeeId
-                    .toUpperCase();
+            employeeData['fullName']?.toString() ??
+            widget.employeeId.toUpperCase();
 
         _position =
-            employeeData['position']
-                    ?.toString() ??
-                'Position not specified';
+            employeeData['position']?.toString() ?? 'Position not specified';
 
-        _summary =
-            results[1]
-                as ThirteenthMonthSummary;
+        _summary = results[1] as ThirteenthMonthSummary;
 
         _isLoading = false;
       });
@@ -106,24 +88,17 @@ class _ThirteenthMonthScreenState
     }
   }
 
-  Future<void> _save({
-    required bool submitForApproval,
-  }) async {
-    final ThirteenthMonthSummary? summary =
-        _summary;
+  Future<void> _save({required bool submitForApproval}) async {
+    final ThirteenthMonthSummary? summary = _summary;
 
     if (summary == null) {
       return;
     }
 
-    final User? currentUser =
-        FirebaseAuth.instance.currentUser;
+    final User? currentUser = FirebaseAuth.instance.currentUser;
 
     if (currentUser == null) {
-      _showMessage(
-        'Your login session has expired.',
-        isError: true,
-      );
+      _showMessage('Your login session has expired.', isError: true);
       return;
     }
 
@@ -149,39 +124,22 @@ class _ThirteenthMonthScreenState
           '13th_${widget.employeeId}_'
           '$_selectedYear';
 
-      final String payslipId =
-          'ps_$payrollId';
+      final String payslipId = 'ps_$payrollId';
 
-      final DocumentReference<
-              Map<String, dynamic>>
-          payrollReference =
-          FirebaseFirestore.instance
-              .collection('payroll')
-              .doc(payrollId);
+      final DocumentReference<Map<String, dynamic>> payrollReference =
+          FirebaseFirestore.instance.collection('payroll').doc(payrollId);
 
-      final DocumentReference<
-              Map<String, dynamic>>
-          payslipReference =
-          FirebaseFirestore.instance
-              .collection('payslips')
-              .doc(payslipId);
+      final DocumentReference<Map<String, dynamic>> payslipReference =
+          FirebaseFirestore.instance.collection('payslips').doc(payslipId);
 
-      final DocumentSnapshot<
-              Map<String, dynamic>>
-          existingPayroll =
+      final DocumentSnapshot<Map<String, dynamic>> existingPayroll =
           await payrollReference.get();
 
-      final DocumentSnapshot<
-              Map<String, dynamic>>
-          existingPayslip =
+      final DocumentSnapshot<Map<String, dynamic>> existingPayslip =
           await payslipReference.get();
 
       final String existingStatus =
-          existingPayroll
-                  .data()?['status']
-                  ?.toString()
-                  .toLowerCase() ??
-              '';
+          existingPayroll.data()?['status']?.toString().toLowerCase() ?? '';
 
       if (<String>{
         'pending_approval',
@@ -194,40 +152,28 @@ class _ThirteenthMonthScreenState
         );
       }
 
-      final String targetStatus =
-          submitForApproval
-              ? 'pending_approval'
-              : 'draft';
+      final String targetStatus = submitForApproval
+          ? 'pending_approval'
+          : 'draft';
 
-      final DateTime yearStart =
-          DateTime(_selectedYear);
+      final DateTime yearStart = DateTime(_selectedYear);
 
-      final DateTime yearEnd =
-          DateTime(
-        _selectedYear,
-        12,
-        31,
-      );
+      final DateTime yearEnd = DateTime(_selectedYear, 12, 31);
 
-      final Map<String, dynamic> data =
-          <String, dynamic>{
-        'payrollType':
-            'thirteenth_month',
+      final Map<String, dynamic> data = <String, dynamic>{
+        'payrollType': 'thirteenth_month',
 
         'payrollYear': _selectedYear,
 
-        'employeeId':
-            summary.employeeReference,
+        'employeeId': summary.employeeReference,
 
         'employeeName': _employeeName,
 
         'position': _position,
 
-        'payrollPeriodStart':
-            Timestamp.fromDate(yearStart),
+        'payrollPeriodStart': Timestamp.fromDate(yearStart),
 
-        'payrollPeriodEnd':
-            Timestamp.fromDate(yearEnd),
+        'payrollPeriodEnd': Timestamp.fromDate(yearEnd),
 
         'basicPay': 0.0,
 
@@ -237,81 +183,53 @@ class _ThirteenthMonthScreenState
 
         'allowances': 0.0,
 
-        'thirteenthMonthPay':
-            summary.thirteenthMonthPay,
+        'thirteenthMonthPay': summary.thirteenthMonthPay,
 
-        'grossPay':
-            summary.thirteenthMonthPay,
+        'grossPay': summary.thirteenthMonthPay,
 
         'totalDeductions': 0.0,
 
-        'netPay':
-            summary.thirteenthMonthPay,
+        'netPay': summary.thirteenthMonthPay,
 
-        'thirteenthMonthBreakdown':
-            summary.toMap(),
+        'thirteenthMonthBreakdown': summary.toMap(),
 
         'status': targetStatus,
 
-        'submittedForApproval':
-            submitForApproval,
+        'submittedForApproval': submitForApproval,
 
         'preparedBy': userSnapshot,
 
-        'preparedAt':
-            FieldValue.serverTimestamp(),
+        'preparedAt': FieldValue.serverTimestamp(),
 
-        'updatedAt':
-            FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
 
-        if (submitForApproval)
-          'generatedBy': userSnapshot,
+        if (submitForApproval) 'generatedBy': userSnapshot,
 
-        if (submitForApproval)
-          'generatedAt':
-              FieldValue.serverTimestamp(),
+        if (submitForApproval) 'generatedAt': FieldValue.serverTimestamp(),
 
-        if (submitForApproval)
-          'submittedAt':
-              FieldValue.serverTimestamp(),
+        if (submitForApproval) 'submittedAt': FieldValue.serverTimestamp(),
       };
 
-      final WriteBatch batch =
-          FirebaseFirestore.instance.batch();
+      final WriteBatch batch = FirebaseFirestore.instance.batch();
 
-      batch.set(
-        payrollReference,
-        <String, dynamic>{
-          ...data,
-          if (!existingPayroll.exists)
-            'createdAt':
-                FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      batch.set(payrollReference, <String, dynamic>{
+        ...data,
+        if (!existingPayroll.exists) 'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
       if (submitForApproval) {
-        batch.set(
-          payslipReference,
-          <String, dynamic>{
-            ...data,
-            'payrollId':
-                payrollReference,
-            'status':
-                'pending_approval',
-            'generatedBy':
-                userSnapshot,
-            'generatedAt':
-                FieldValue.serverTimestamp(),
-            'approvedBy': null,
-            'approvedAt': null,
-            'approvalRemarks': null,
-            if (!existingPayslip.exists)
-              'createdAt':
-                  FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true),
-        );
+        batch.set(payslipReference, <String, dynamic>{
+          ...data,
+          'payrollId': payrollReference,
+          'status': 'pending_approval',
+          'generatedBy': userSnapshot,
+          'generatedAt': FieldValue.serverTimestamp(),
+          'approvedBy': null,
+          'approvedAt': null,
+          'approvalRemarks': null,
+          if (!existingPayslip.exists)
+            'createdAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
       }
 
       await batch.commit();
@@ -323,7 +241,7 @@ class _ThirteenthMonthScreenState
       _showMessage(
         submitForApproval
             ? '13th-month pay submitted '
-                'for approval.'
+                  'for approval.'
             : '13th-month pay saved as draft.',
         isError: false,
       );
@@ -346,53 +264,37 @@ class _ThirteenthMonthScreenState
     }
   }
 
-  Future<Map<String, dynamic>>
-      _loadCurrentUserSnapshot() async {
-    final User? user =
-        FirebaseAuth.instance.currentUser;
+  Future<Map<String, dynamic>> _loadCurrentUserSnapshot() async {
+    final User? user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
-      throw StateError(
-        'Your login session has expired.',
-      );
+      throw StateError('Your login session has expired.');
     }
 
-    final DocumentSnapshot<Map<String, dynamic>>
-        userDocument =
+    final DocumentSnapshot<Map<String, dynamic>> userDocument =
         await FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
             .get();
 
     final Map<String, dynamic> userData =
-        userDocument.data() ??
-            <String, dynamic>{};
+        userDocument.data() ?? <String, dynamic>{};
 
     return <String, dynamic>{
       'uid': user.uid,
       'fullName':
-          userData['fullName']
-                  ?.toString() ??
-              user.displayName ??
-              'Unknown user',
-      'email':
-          userData['email']
-                  ?.toString() ??
-              user.email ??
-              '',
+          userData['fullName']?.toString() ??
+          user.displayName ??
+          'Unknown user',
+      'email': userData['email']?.toString() ?? user.email ?? '',
       'role':
-          userData['userRole']
-                  ?.toString() ??
-              userData['role']
-                  ?.toString() ??
-              'hr',
+          userData['userRole']?.toString() ??
+          userData['role']?.toString() ??
+          'hr',
     };
   }
 
-  void _showMessage(
-    String message, {
-    required bool isError,
-  }) {
+  void _showMessage(String message, {required bool isError}) {
     if (!mounted) {
       return;
     }
@@ -402,8 +304,7 @@ class _ThirteenthMonthScreenState
       ..showSnackBar(
         SnackBar(
           content: Text(message),
-          behavior:
-              SnackBarBehavior.floating,
+          behavior: SnackBarBehavior.floating,
           backgroundColor: isError
               ? const Color(0xFFD92D20)
               : const Color(0xFF039855),
@@ -414,26 +315,19 @@ class _ThirteenthMonthScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor:
-          const Color(0xFFF7F8FC),
+      backgroundColor: const Color(0xFFF7F8FC),
       appBar: AppBar(
-        title:
-            const Text('13th-Month Pay'),
-        backgroundColor:
-            const Color(0xFFF04B0B),
+        title: const Text('13th-Month Pay'),
+        backgroundColor: const Color(0xFFF04B0B),
         foregroundColor: Colors.white,
       ),
-      body: SafeArea(
-        child: _buildBody(),
-      ),
+      body: SafeArea(child: _buildBody()),
     );
   }
 
   Widget _buildBody() {
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (_errorMessage != null) {
@@ -441,8 +335,7 @@ class _ThirteenthMonthScreenState
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
-            mainAxisSize:
-                MainAxisSize.min,
+            mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               const Icon(
                 Icons.error_outline,
@@ -450,17 +343,12 @@ class _ThirteenthMonthScreenState
                 size: 58,
               ),
               const SizedBox(height: 12),
-              Text(
-                _errorMessage!,
-                textAlign: TextAlign.center,
-              ),
+              Text(_errorMessage!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: _load,
-                icon:
-                    const Icon(Icons.refresh),
-                label:
-                    const Text('Try Again'),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Try Again'),
               ),
             ],
           ),
@@ -468,8 +356,7 @@ class _ThirteenthMonthScreenState
       );
     }
 
-    final ThirteenthMonthSummary summary =
-        _summary!;
+    final ThirteenthMonthSummary summary = _summary!;
 
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -478,33 +365,25 @@ class _ThirteenthMonthScreenState
           padding: const EdgeInsets.all(17),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius:
-                BorderRadius.circular(17),
-            border: Border.all(
-              color:
-                  const Color(0xFFE4E7EC),
-            ),
+            borderRadius: BorderRadius.circular(17),
+            border: Border.all(color: const Color(0xFFE4E7EC)),
           ),
           child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Text(
                 _employeeName,
                 style: const TextStyle(
                   color: Color(0xFF101828),
                   fontSize: 19,
-                  fontWeight:
-                      FontWeight.w800,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
                 '${widget.employeeId.toUpperCase()} '
                 '• $_position',
-                style: const TextStyle(
-                  color: Color(0xFF667085),
-                ),
+                style: const TextStyle(color: Color(0xFF667085)),
               ),
             ],
           ),
@@ -516,30 +395,22 @@ class _ThirteenthMonthScreenState
           initialValue: _selectedYear,
           decoration: InputDecoration(
             labelText: 'Calendar Year',
-            prefixIcon: const Icon(
-              Icons.calendar_today_outlined,
-            ),
+            prefixIcon: const Icon(Icons.calendar_today_outlined),
             filled: true,
             fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius:
-                  BorderRadius.circular(12),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          items: List<int>.generate(
-            5,
-            (int index) =>
-                DateTime.now().year - index,
-          ).map(
-            (int year) =>
-                DropdownMenuItem<int>(
-              value: year,
-              child: Text(year.toString()),
-            ),
-          ).toList(),
+          items:
+              List<int>.generate(5, (int index) => DateTime.now().year - index)
+                  .map(
+                    (int year) => DropdownMenuItem<int>(
+                      value: year,
+                      child: Text(year.toString()),
+                    ),
+                  )
+                  .toList(),
           onChanged: (int? year) async {
-            if (year == null ||
-                year == _selectedYear) {
+            if (year == null || year == _selectedYear) {
               return;
             }
 
@@ -556,43 +427,25 @@ class _ThirteenthMonthScreenState
         Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            color:
-                const Color(0xFFFFF7ED),
-            borderRadius:
-                BorderRadius.circular(18),
-            border: Border.all(
-              color:
-                  const Color(0xFFFFDDBD),
-            ),
+            color: const Color(0xFFFFF7ED),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFFFDDBD)),
           ),
           child: Column(
             children: <Widget>[
               _summaryRow(
-                label:
-                    'Eligible Payroll Records',
-                value: summary
-                    .eligiblePayrollCount
-                    .toString(),
+                label: 'Eligible Payroll Records',
+                value: summary.eligiblePayrollCount.toString(),
               ),
               _summaryRow(
-                label:
-                    'Total Eligible Basic Salary',
-                value: _money(
-                  summary
-                      .totalEligibleBasicSalary,
-                ),
+                label: 'Total Eligible Basic Salary',
+                value: _money(summary.totalEligibleBasicSalary),
               ),
-              _summaryRow(
-                label: 'Divisor',
-                value: '12',
-              ),
+              _summaryRow(label: 'Divisor', value: '12'),
               const Divider(height: 24),
               _summaryRow(
                 label: '13th-Month Pay',
-                value: _money(
-                  summary
-                      .thirteenthMonthPay,
-                ),
+                value: _money(summary.thirteenthMonthPay),
                 bold: true,
                 highlight: true,
               ),
@@ -606,11 +459,7 @@ class _ThirteenthMonthScreenState
           'Only approved or released regular '
           'payroll records for the selected year '
           'are included.',
-          style: TextStyle(
-            color: Color(0xFF667085),
-            fontSize: 12,
-            height: 1.4,
-          ),
+          style: TextStyle(color: Color(0xFF667085), fontSize: 12, height: 1.4),
         ),
 
         const SizedBox(height: 24),
@@ -619,23 +468,15 @@ class _ThirteenthMonthScreenState
           onPressed: _isSaving
               ? null
               : () {
-                  _save(
-                    submitForApproval: false,
-                  );
+                  _save(submitForApproval: false);
                 },
           style: OutlinedButton.styleFrom(
-            foregroundColor:
-                const Color(0xFFF04B0B),
-            minimumSize:
-                const Size.fromHeight(53),
-            side: const BorderSide(
-              color: Color(0xFFF04B0B),
-            ),
+            foregroundColor: const Color(0xFFF04B0B),
+            minimumSize: const Size.fromHeight(53),
+            side: const BorderSide(color: Color(0xFFF04B0B)),
           ),
-          icon:
-              const Icon(Icons.save_outlined),
-          label:
-              const Text('Save as Draft'),
+          icon: const Icon(Icons.save_outlined),
+          label: const Text('Save as Draft'),
         ),
 
         const SizedBox(height: 11),
@@ -644,35 +485,24 @@ class _ThirteenthMonthScreenState
           onPressed: _isSaving
               ? null
               : () {
-                  _save(
-                    submitForApproval: true,
-                  );
+                  _save(submitForApproval: true);
                 },
           style: FilledButton.styleFrom(
-            backgroundColor:
-                const Color(0xFFF04B0B),
+            backgroundColor: const Color(0xFFF04B0B),
             foregroundColor: Colors.white,
-            minimumSize:
-                const Size.fromHeight(53),
+            minimumSize: const Size.fromHeight(53),
           ),
           icon: _isSaving
               ? const SizedBox(
                   width: 19,
                   height: 19,
-                  child:
-                      CircularProgressIndicator(
+                  child: CircularProgressIndicator(
                     strokeWidth: 2,
                     color: Colors.white,
                   ),
                 )
-              : const Icon(
-                  Icons.send_outlined,
-                ),
-          label: Text(
-            _isSaving
-                ? 'Saving...'
-                : 'Save and Submit for Approval',
-          ),
+              : const Icon(Icons.send_outlined),
+          label: Text(_isSaving ? 'Saving...' : 'Save and Submit for Approval'),
         ),
       ],
     );
@@ -685,21 +515,15 @@ class _ThirteenthMonthScreenState
     bool highlight = false,
   }) {
     return Padding(
-      padding:
-          const EdgeInsets.symmetric(
-        vertical: 7,
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
         children: <Widget>[
           Expanded(
             child: Text(
               label,
               style: TextStyle(
-                color:
-                    const Color(0xFF475467),
-                fontWeight: bold
-                    ? FontWeight.w800
-                    : FontWeight.w600,
+                color: const Color(0xFF475467),
+                fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
               ),
             ),
           ),
@@ -707,17 +531,10 @@ class _ThirteenthMonthScreenState
             value,
             style: TextStyle(
               color: highlight
-                  ? const Color(
-                      0xFFF04B0B,
-                    )
-                  : const Color(
-                      0xFF101828,
-                    ),
-              fontSize:
-                  highlight ? 19 : 14,
-              fontWeight: bold
-                  ? FontWeight.w800
-                  : FontWeight.w700,
+                  ? const Color(0xFFF04B0B)
+                  : const Color(0xFF101828),
+              fontSize: highlight ? 19 : 14,
+              fontWeight: bold ? FontWeight.w800 : FontWeight.w700,
             ),
           ),
         ],

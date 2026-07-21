@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../services/hr_kpi_service.dart';
 import 'hr_dashboard_widgets.dart';
 
@@ -16,49 +17,76 @@ class HrDashboardHome extends StatelessWidget {
   final VoidCallback onFaceAttendance;
   final VoidCallback onApproveLeaves;
 
-  static final HrKpiService _kpiService = HrKpiService();
+  static final HrKpiService _kpiService =
+      HrKpiService();
 
   @override
   Widget build(BuildContext context) {
-    final List<_KpiConfiguration> kpis = [
+    final List<_KpiConfiguration> kpis =
+        <_KpiConfiguration>[
       _KpiConfiguration(
-        stream: _kpiService.activeEmployees(),
+        stream: _kpiService.totalEmployees(),
         title: 'Total Employees',
-        subtitleBuilder: (value) => '$value active',
+        subtitleBuilder: (int value) =>
+            '$value employee record'
+            '${value == 1 ? '' : 's'}',
         icon: Icons.people_outline_rounded,
         accentColor: const Color(0xFFF04B0B),
-        iconBackground: const Color(0xFFFFF4E8),
+        iconBackground:
+            const Color(0xFFFFF4E8),
       ),
       _KpiConfiguration(
         stream: _kpiService.presentToday(),
         title: 'Present Today',
-        subtitleBuilder: (_) => 'face verified',
-        icon: Icons.check_circle_outline_rounded,
-        accentColor: const Color(0xFF00A83B),
-        iconBackground: const Color(0xFFECFBF1),
+        subtitleBuilder: (int value) =>
+            value == 1
+                ? '1 face-verified employee'
+                : '$value face-verified employees',
+        icon:
+            Icons.check_circle_outline_rounded,
+        accentColor:
+            const Color(0xFF00A83B),
+        iconBackground:
+            const Color(0xFFECFBF1),
       ),
       _KpiConfiguration(
         stream: _kpiService.pendingLeaves(),
         title: 'Pending Leaves',
-        subtitleBuilder: (_) => 'need action',
+        subtitleBuilder: (int value) =>
+            value == 1
+                ? '1 request needs action'
+                : '$value requests need action',
         icon: Icons.calendar_today_outlined,
-        accentColor: const Color(0xFFE36B00),
-        iconBackground: const Color(0xFFFFF8E1),
+        accentColor:
+            const Color(0xFFE36B00),
+        iconBackground:
+            const Color(0xFFFFF8E1),
       ),
       _KpiConfiguration(
         stream: _kpiService.draftPayslips(),
         title: 'Payslips Draft',
-        subtitleBuilder: (_) => 'to release',
+        subtitleBuilder: (int value) =>
+            value == 1
+                ? '1 draft to release'
+                : '$value drafts to release',
         icon: Icons.description_outlined,
-        accentColor: const Color(0xFF1F5CF5),
-        iconBackground: const Color(0xFFECF3FF),
+        accentColor:
+            const Color(0xFF1F5CF5),
+        iconBackground:
+            const Color(0xFFECF3FF),
       ),
     ];
 
     return LayoutBuilder(
-      builder: (context, constraints) {
-        final bool oneColumn = constraints.maxWidth < 340;
-        final int columnCount = oneColumn ? 1 : 2;
+      builder: (
+        BuildContext context,
+        BoxConstraints constraints,
+      ) {
+        final bool oneColumn =
+            constraints.maxWidth < 340;
+
+        final int columnCount =
+            oneColumn ? 1 : 2;
 
         return ListView(
           padding: const EdgeInsets.fromLTRB(
@@ -67,7 +95,7 @@ class HrDashboardHome extends StatelessWidget {
             18,
             30,
           ),
-          children: [
+          children: <Widget>[
             const Text(
               'Dashboard Overview',
               style: TextStyle(
@@ -85,49 +113,51 @@ class HrDashboardHome extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-
-            // KPI CARDS
             GridView.builder(
               padding: EdgeInsets.zero,
               shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
+              physics:
+                  const NeverScrollableScrollPhysics(),
               itemCount: kpis.length,
               gridDelegate:
                   SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: columnCount,
-                    crossAxisSpacing: 14,
-                    mainAxisSpacing: 14,
-                    mainAxisExtent: oneColumn ? 165 : 185,
-                  ),
-              itemBuilder: (context, index) {
-                final _KpiConfiguration kpi = kpis[index];
+                crossAxisCount: columnCount,
+                crossAxisSpacing: 14,
+                mainAxisSpacing: 14,
+                mainAxisExtent:
+                    oneColumn ? 165 : 185,
+              ),
+              itemBuilder: (
+                BuildContext context,
+                int index,
+              ) {
+                final _KpiConfiguration kpi =
+                    kpis[index];
 
                 return _KpiCard(
                   stream: kpi.stream,
                   title: kpi.title,
-                  subtitleBuilder: kpi.subtitleBuilder,
+                  subtitleBuilder:
+                      kpi.subtitleBuilder,
                   icon: kpi.icon,
-                  accentColor: kpi.accentColor,
-                  iconBackground: kpi.iconBackground,
+                  accentColor:
+                      kpi.accentColor,
+                  iconBackground:
+                      kpi.iconBackground,
                 );
               },
             ),
-
             const SizedBox(height: 24),
-
-            // QUICK ACTIONS
             QuickActionsCard(
               onRunPayroll: onRunPayroll,
               onAddEmployee: onAddEmployee,
-              onFaceAttendance: onFaceAttendance,
-              onApproveLeaves: onApproveLeaves,
+              onFaceAttendance:
+                  onFaceAttendance,
+              onApproveLeaves:
+                  onApproveLeaves,
             ),
-
             const SizedBox(height: 24),
-
-            // LIVE PENDING LEAVE NOTIFICATIONS
             const PendingLeaveNotifications(),
-
             const SizedBox(height: 20),
           ],
         );
@@ -148,7 +178,8 @@ class _KpiCard extends StatelessWidget {
 
   final Stream<int> stream;
   final String title;
-  final String Function(int value) subtitleBuilder;
+  final String Function(int value)
+      subtitleBuilder;
   final IconData icon;
   final Color accentColor;
   final Color iconBackground;
@@ -157,17 +188,25 @@ class _KpiCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder<int>(
       stream: stream,
-      builder: (context, snapshot) {
+      builder: (
+        BuildContext context,
+        AsyncSnapshot<int> snapshot,
+      ) {
         final bool isLoading =
-            snapshot.connectionState == ConnectionState.waiting &&
-            !snapshot.hasData;
+            snapshot.connectionState ==
+                    ConnectionState.waiting &&
+                !snapshot.hasData;
 
-        final bool hasError = snapshot.hasError;
-        final int value = snapshot.data ?? 0;
+        final bool hasError =
+            snapshot.hasError;
+
+        final int value =
+            snapshot.data ?? 0;
 
         if (hasError) {
           debugPrint(
-            'Unable to load $title KPI: ${snapshot.error}',
+            'Unable to load $title KPI: '
+            '${snapshot.error}',
           );
         }
 
@@ -175,11 +214,13 @@ class _KpiCard extends StatelessWidget {
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
+            borderRadius:
+                BorderRadius.circular(24),
             border: Border.all(
-              color: const Color(0xFFE4E7EC),
+              color:
+                  const Color(0xFFE4E7EC),
             ),
-            boxShadow: const [
+            boxShadow: const <BoxShadow>[
               BoxShadow(
                 color: Color(0x140F172A),
                 blurRadius: 12,
@@ -188,8 +229,9 @@ class _KpiCard extends StatelessWidget {
             ],
           ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+            crossAxisAlignment:
+                CrossAxisAlignment.start,
+            children: <Widget>[
               Container(
                 width: 48,
                 height: 48,
@@ -203,14 +245,13 @@ class _KpiCard extends StatelessWidget {
                   size: 25,
                 ),
               ),
-
               const Spacer(),
-
               if (isLoading)
                 SizedBox(
                   width: 30,
                   height: 30,
-                  child: CircularProgressIndicator(
+                  child:
+                      CircularProgressIndicator(
                     strokeWidth: 2.5,
                     color: accentColor,
                   ),
@@ -221,35 +262,37 @@ class _KpiCard extends StatelessWidget {
                   style: TextStyle(
                     color: accentColor,
                     fontSize: 30,
-                    fontWeight: FontWeight.w800,
+                    fontWeight:
+                        FontWeight.w800,
                     height: 1,
                   ),
                 ),
-
               const SizedBox(height: 8),
-
               Text(
                 title,
                 maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+                overflow:
+                    TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: Color(0xFF101828),
                   fontSize: 16,
-                  fontWeight: FontWeight.w700,
+                  fontWeight:
+                      FontWeight.w700,
                   height: 1.15,
                 ),
               ),
-
               const SizedBox(height: 4),
-
               Text(
                 hasError
                     ? 'unable to load'
                     : isLoading
-                    ? 'loading...'
-                    : subtitleBuilder(value),
+                        ? 'loading...'
+                        : subtitleBuilder(
+                            value,
+                          ),
                 maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                overflow:
+                    TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: Color(0xFF98A2B3),
                   fontSize: 14,
@@ -275,7 +318,8 @@ class _KpiConfiguration {
 
   final Stream<int> stream;
   final String title;
-  final String Function(int value) subtitleBuilder;
+  final String Function(int value)
+      subtitleBuilder;
   final IconData icon;
   final Color accentColor;
   final Color iconBackground;

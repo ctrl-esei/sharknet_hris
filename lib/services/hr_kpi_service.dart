@@ -8,33 +8,39 @@ class HrKpiService {
 
   final FirebaseFirestore _firestore;
 
-  /// Counts active users whose role is employee.
+  /// Counts every document in the `employee` collection.
   ///
-  /// Admin and HR accounts are excluded.
+  /// This fixes the dashboard total because newly added employee records
+  /// are counted even when no Firebase Authentication user exists yet.
+  Stream<int> totalEmployees() {
+    return _firestore
+        .collection('employee')
+        .snapshots()
+        .map((snapshot) => snapshot.docs.length);
+  }
+
+  /// Counts active employee records from the `employee` collection.
   Stream<int> activeEmployees() {
     return _firestore
-        .collection('users')
-        .where('role', isEqualTo: 'employee')
+        .collection('employee')
         .snapshots()
         .map((snapshot) {
       return snapshot.docs.where((document) {
         final Map<String, dynamic> data =
             document.data();
 
-        final String accountStatus =
-            (data['accountStatus'] ?? '')
+        final String employmentStatus =
+            (data['employmentStatus'] ?? 'active')
                 .toString()
                 .trim()
                 .toLowerCase();
 
-        return accountStatus == 'active';
+        return employmentStatus == 'active';
       }).length;
     });
   }
 
-  /// Counts today's attendance records that are:
-  /// status = present
-  /// faceVerified = true
+  /// Counts employees with a face-verified time-in record today.
   Stream<int> presentToday() {
     final DateTime now = DateTime.now();
 
@@ -74,27 +80,55 @@ class HrKpiService {
         final bool faceVerified =
             data['faceVerified'] == true;
 
-        return status == 'present' &&
-            faceVerified;
+        final bool hasTimeIn =
+            data['timeIn'] != null;
+
+        final bool excludedStatus =
+            status == 'absent' ||
+            status == 'leave' ||
+            status == 'rejected' ||
+            status == 'void';
+
+        return hasTimeIn &&
+            faceVerified &&
+            !excludedStatus;
       }).length;
     });
   }
 
-  /// Counts pending leave requests.
+  /// Counts pending leave requests in real time.
   Stream<int> pendingLeaves() {
     return _firestore
         .collection('leave_request')
-        .where('status', isEqualTo: 'pending')
         .snapshots()
-        .map((snapshot) => snapshot.docs.length);
+        .map((snapshot) {
+      return snapshot.docs.where((document) {
+        final String status =
+            (document.data()['status'] ?? '')
+                .toString()
+                .trim()
+                .toLowerCase();
+
+        return status == 'pending';
+      }).length;
+    });
   }
 
-  /// Counts draft payslips.
+  /// Counts draft payslip records in real time.
   Stream<int> draftPayslips() {
     return _firestore
         .collection('payslips')
-        .where('status', isEqualTo: 'draft')
         .snapshots()
-        .map((snapshot) => snapshot.docs.length);
+        .map((snapshot) {
+      return snapshot.docs.where((document) {
+        final String status =
+            (document.data()['status'] ?? '')
+                .toString()
+                .trim()
+                .toLowerCase();
+
+        return status == 'draft';
+      }).length;
+    });
   }
 }
